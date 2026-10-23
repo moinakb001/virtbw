@@ -24,6 +24,7 @@ const (
 	ClientActionU2FAuthenticate    ClientAction = 1
 	ClientActionFIDOMakeCredential ClientAction = 2
 	ClientActionFIDOGetAssertion   ClientAction = 3
+	ClientActionFIDOSelect         ClientAction = 4
 )
 
 var clientLogger *log.Logger = util.NewLogger("[CLIENT] ", util.LogLevelDebug)

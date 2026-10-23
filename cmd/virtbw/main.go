@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
@@ -23,6 +25,9 @@ var serveURL string
 var cacheTTL time.Duration
 var syncOnStart bool
 var verbose bool
+var transport string
+var listenAddress string
+var trustUnlockedVault bool
 
 var stdin = bufio.NewReader(os.Stdin)
 
@@ -32,7 +37,7 @@ func readLine(prompt string) string {
 	response, err := stdin.ReadString('\n')
 	if err != nil {
 		fmt.Printf("Could not read user input: %s\n", err)
-		return ""
+		return "n"
 	}
 	return strings.TrimSpace(response)
 }
@@ -40,6 +45,10 @@ func readLine(prompt string) string {
 type terminalApprover struct{}
 
 func (approver terminalApprover) ApproveClientAction(action fido_client.ClientAction, params fido_client.ClientActionRequestParams) bool {
+	if action == fido_client.ClientActionFIDOSelect {
+		response := strings.ToLower(readLine("Select this security key for the browser? No login is approved yet. (y/N)"))
+		return response == "y" || response == "yes"
+	}
 	if action != fido_client.ClientActionFIDOGetAssertion {
 		return false
 	}
@@ -48,7 +57,7 @@ func (approver terminalApprover) ApproveClientAction(action fido_client.ClientAc
 }
 
 func (approver terminalApprover) ChooseCredential(relyingParty string, userNames []string) (int, bool) {
-	lines := []string{fmt.Sprintf("Choose an account to log in to \"%s\" (or n to deny):", relyingParty)}
+	lines := []string{fmt.Sprintf("Choose a passkey for %q (enter its number, or n to cancel):", relyingParty)}
 	for i, name := range userNames {
 		lines = append(lines, fmt.Sprintf("  %d) %s", i+1, name))
 	}
@@ -77,7 +86,9 @@ func createClient() *bitwarden.Client {
 		fmt.Fprintf(os.Stderr, "Unknown backend %q, expected \"cli\" or \"serve\"\n", backend)
 		os.Exit(1)
 	}
-	return bitwarden.NewClient(vault, terminalApprover{}, bitwarden.Options{CacheTTL: cacheTTL})
+	return bitwarden.NewClient(vault, terminalApprover{}, bitwarden.Options{
+		CacheTTL: cacheTTL, TrustUnlockedVault: trustUnlockedVault, SelectCredentialLocally: true,
+	})
 }
 
 func syncVault(client *bitwarden.Client) {
@@ -104,7 +115,10 @@ func listPasskeys(cmd *cobra.Command, args []string) {
 	}
 }
 
-func start(cmd *cobra.Command, args []string) {
+func start(cmd *cobra.Command, args []string) error {
+	if transport != "native" && transport != "virtualhere" {
+		return fmt.Errorf("unknown transport %q, expected native or virtualhere", transport)
+	}
 	client := createClient()
 	syncVault(client)
 	sources, err := client.Passkeys()
@@ -113,6 +127,15 @@ func start(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("Found %d passkeys in Bitwarden vault (read-only)\n", len(sources))
+	if trustUnlockedVault {
+		fmt.Println("Authorization: live unlocked Bitwarden vault. UV and presence use this trust policy. Multiple matching passkeys require a terminal selection; one match proceeds automatically.")
+	}
+	if transport == "virtualhere" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+		fmt.Printf("Starting experimental VirtualHere transport at %s. Add this address as a manual hub and use virtbw Virtual FIDO.\n", listenAddress)
+		return virtual_fido.ServeVirtualHere(ctx, listenAddress, client)
+	}
 
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
@@ -134,6 +157,7 @@ func start(cmd *cobra.Command, args []string) {
 		wg.Done()
 	}()
 	wg.Wait()
+	return nil
 }
 
 var rootCmd = &cobra.Command{
@@ -154,12 +178,15 @@ func init() {
 	rootCmd.PersistentFlags().DurationVar(&cacheTTL, "cache-ttl", 30*time.Second, "How long vault items are reused before reading the vault again")
 	rootCmd.PersistentFlags().BoolVar(&syncOnStart, "sync", true, "Sync the vault with the Bitwarden server on start")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging")
+	rootCmd.PersistentFlags().StringVar(&transport, "transport", "native", "Device transport: native or virtualhere (experimental)")
+	rootCmd.PersistentFlags().StringVar(&listenAddress, "listen", "127.0.0.1:7575", "Loopback IP:port for VirtualHere (trial clients require port 7575)")
+	rootCmd.PersistentFlags().BoolVar(&trustUnlockedVault, "trust-unlocked-vault", false, "Report UV based on live unlocked vault access; only prompt to choose between multiple matching passkeys")
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "start",
 		Short: "Attach virtual FIDO device",
-		Run:   start,
+		RunE:  start,
 	})
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "list",

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sync"
 
 	"github.com/moinakb001/virtbw/cose"
 	"github.com/moinakb001/virtbw/crypto"
@@ -56,6 +57,8 @@ const (
 	ctap2ErrInvalidCBOR          ctapStatusCode = 0x12
 	ctap2ErrNoCredentials        ctapStatusCode = 0x2E
 	ctap2ErrOperationDenied      ctapStatusCode = 0x27
+	ctap2ErrUnsupportedOption    ctapStatusCode = 0x2B
+	ctap2ErrNotAllowed           ctapStatusCode = 0x30
 	ctap2ErrMissingParam         ctapStatusCode = 0x14
 	ctap2ErrPINInvalid           ctapStatusCode = 0x31
 	ctap2ErrPINBlocked           ctapStatusCode = 0x32
@@ -90,7 +93,10 @@ type CTAPClient interface {
 }
 
 type CTAPServer struct {
-	client CTAPClient
+	client      CTAPClient
+	messageLock sync.Mutex
+	assertions  *assertionContinuation
+	channelID   uint32
 }
 
 func NewCTAPServer(client CTAPClient) *CTAPServer {
@@ -98,7 +104,23 @@ func NewCTAPServer(client CTAPClient) *CTAPServer {
 }
 
 func (server *CTAPServer) HandleMessage(data []byte) []byte {
+	return server.HandleMessageForChannel(0, data)
+}
+
+// A continuation belongs to one HID channel and one original request. Other
+// transports use channel zero through HandleMessage.
+func (server *CTAPServer) HandleMessageForChannel(channelID uint32, data []byte) []byte {
+	server.messageLock.Lock()
+	defer server.messageLock.Unlock()
+	if len(data) == 0 {
+		server.assertions = nil
+		return []byte{byte(ctap1ErrInvalidLength)}
+	}
 	command := ctapCommand(data[0])
+	if command != ctapCommandGetNextAssertion || channelID != server.channelID {
+		server.assertions = nil
+	}
+	server.channelID = channelID
 	ctapLogger.Printf("CTAP COMMAND: %s\n\n", ctapCommandDescriptions[command])
 	switch command {
 	case ctapCommandMakeCredential:
@@ -107,6 +129,8 @@ func (server *CTAPServer) HandleMessage(data []byte) []byte {
 		return server.handleGetInfo()
 	case ctapCommandGetAssertion:
 		return server.handleGetAssertion(data[1:])
+	case ctapCommandGetNextAssertion:
+		return server.handleGetNextAssertion(data[1:])
 	case ctapCommandClientPIN:
 		return server.handleClientPIN(data[1:])
 	default:
@@ -206,6 +230,9 @@ func (server *CTAPServer) handleMakeCredential(data []byte) []byte {
 	err := cbor.Unmarshal(data, &args)
 	util.CheckErr(err, fmt.Sprintf("Could not decode CBOR for MAKE_CREDENTIAL: %s %v", err, data))
 	ctapLogger.Printf("MAKE CREDENTIAL: %s\n\n", args)
+	if selector, ok := server.client.(authenticatorSelector); ok && isSelectionProbe(args) {
+		return server.selectionResponse(selector, args.Options != nil && args.Options.UserVerification)
+	}
 	var flags authDataFlags = 0
 
 	supported := false
@@ -238,6 +265,12 @@ func (server *CTAPServer) handleMakeCredential(data []byte) []byte {
 		return []byte{byte(ctap2ErrOperationDenied)}
 	}
 	flags = flags | authDataFlagUserPresent
+	if args.Options != nil && args.Options.UserVerification && flags&authDataFlagUserVerified == 0 {
+		if status := server.verifyUser(args.RP.ID); status != ctap1ErrSuccess {
+			return []byte{byte(status)}
+		}
+		flags |= authDataFlagUserVerified
+	}
 
 	credentialSource := server.client.NewCredentialSource(args.PubKeyCredParams, args.ExcludeList, args.RP, args.User)
 	if credentialSource == nil {
@@ -265,11 +298,11 @@ func (server *CTAPServer) handleMakeCredential(data []byte) []byte {
 }
 
 type getInfoOptions struct {
-	IsPlatform      bool  `cbor:"plat"`
-	CanResidentKey  bool  `cbor:"rk"`
-	HasClientPIN    *bool `cbor:"clientPin,omitempty"`
-	CanUserPresence bool  `cbor:"up"`
-	// CanUserVerification bool  `cbor:"uv"`
+	IsPlatform          bool  `cbor:"plat"`
+	CanResidentKey      bool  `cbor:"rk"`
+	HasClientPIN        *bool `cbor:"clientPin,omitempty"`
+	CanUserPresence     bool  `cbor:"up"`
+	CanUserVerification *bool `cbor:"uv,omitempty"`
 }
 
 type getInfoResponse struct {
@@ -289,8 +322,11 @@ func (server *CTAPServer) handleGetInfo() []byte {
 			IsPlatform:      false,
 			CanResidentKey:  server.client.SupportsResidentKey(),
 			CanUserPresence: true,
-			// CanUserVerification: true,
 		},
+	}
+	if server.supportsUserVerification() {
+		verified := true
+		response.Options.CanUserVerification = &verified
 	}
 	if server.client.SupportsPIN() {
 		var clientPIN bool = server.client.PINHash() != nil
@@ -324,11 +360,11 @@ type getAssertionUser struct {
 }
 
 type getAssertionResponse struct {
-	Credential        *webauthn.PublicKeyCredentialDescriptor `cbor:"1,keyasint,omitempty"`
-	AuthenticatorData []byte                                  `cbor:"2,keyasint"`
-	Signature         []byte                                  `cbor:"3,keyasint"`
-	User              *getAssertionUser                       `cbor:"4,keyasint,omitempty"`
-	//NumberOfCredentials int32 `cbor:"5,keyasint"`
+	Credential          *webauthn.PublicKeyCredentialDescriptor `cbor:"1,keyasint,omitempty"`
+	AuthenticatorData   []byte                                  `cbor:"2,keyasint"`
+	Signature           []byte                                  `cbor:"3,keyasint"`
+	User                *getAssertionUser                       `cbor:"4,keyasint,omitempty"`
+	NumberOfCredentials int                                     `cbor:"5,keyasint,omitempty"`
 }
 
 func (server *CTAPServer) handleGetAssertion(data []byte) []byte {
@@ -340,6 +376,9 @@ func (server *CTAPServer) handleGetAssertion(data []byte) []byte {
 		return []byte{byte(ctap2ErrInvalidCBOR)}
 	}
 	ctapLogger.Printf("GET ASSERTION: %#v\n\n", args)
+	if args.PINUVAuthParam != nil && !server.client.SupportsPIN() {
+		return []byte{byte(ctap2ErrPINAuthInvalid)}
+	}
 
 	if server.client.SupportsPIN() {
 		if args.PINUVAuthParam != nil {
@@ -352,6 +391,13 @@ func (server *CTAPServer) handleGetAssertion(data []byte) []byte {
 			}
 			flags = flags | authDataFlagUserVerified
 		}
+	}
+
+	if args.Options.UserVerification && flags&authDataFlagUserVerified == 0 {
+		if status := server.verifyUser(args.RPID); status != ctap1ErrSuccess {
+			return []byte{byte(status)}
+		}
+		flags |= authDataFlagUserVerified
 	}
 
 	credentialSource := server.client.GetAssertionSource(args.RPID, args.AllowList)
@@ -369,15 +415,32 @@ func (server *CTAPServer) handleGetAssertion(data []byte) []byte {
 		flags = flags | authDataFlagUserPresent
 	}
 
+	count := 0
+	if multi, ok := server.client.(multipleAssertionClient); ok && multi.SupportsMultipleAssertions() &&
+		len(args.AllowList) == 0 && flags&authDataFlagUserVerified != 0 && flags&authDataFlagUserPresent != 0 {
+		sources := multi.GetAssertionSources(args.RPID)
+		if len(sources) == 0 {
+			return []byte{byte(ctap2ErrNoCredentials)}
+		}
+		credentialSource = sources[0]
+		if len(sources) > 1 {
+			count = len(sources)
+			server.rememberAssertions(args, flags, sources[1:])
+		}
+	}
+	return assertionResponseBytes(args, credentialSource, flags, count)
+}
+
+func assertionResponseBytes(args getAssertionArgs, credentialSource *identities.CredentialSource, flags authDataFlags, count int) []byte {
 	authData := makeAuthData(args.RPID, credentialSource, nil, flags)
 	signature := credentialSource.PrivateKey.Sign(util.Concat(authData, args.ClientDataHash))
 
 	credentialDescriptor := credentialSource.CTAPDescriptor()
 	response := getAssertionResponse{
-		Credential:        &credentialDescriptor,
-		AuthenticatorData: authData,
-		Signature:         signature,
-		//NumberOfCredentials: 1,
+		Credential:          &credentialDescriptor,
+		AuthenticatorData:   authData,
+		Signature:           signature,
+		NumberOfCredentials: count,
 	}
 	if len(args.AllowList) == 0 && credentialSource.User != nil && len(credentialSource.User.ID) > 0 {
 		response.User = &getAssertionUser{ID: credentialSource.User.ID}

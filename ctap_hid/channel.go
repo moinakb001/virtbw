@@ -91,7 +91,14 @@ func (channel *ctapHIDChannel) handleDataMessage(header ctapHIDMessageHeader, pa
 		channel.server.sendResponse(header.ChannelID, ctapHIDCommandMsg, responsePayload)
 	case ctapHIDCommandCBOR:
 		stop := util.StartRecurringFunction(keepConnectionAlive(channel.server, channel.channelId, ctapHIDStatusUpneeded), 50)
-		responsePayload := channel.server.ctapServer.HandleMessage(payload)
+		var responsePayload []byte
+		if handler, ok := channel.server.ctapServer.(interface {
+			HandleMessageForChannel(uint32, []byte) []byte
+		}); ok {
+			responsePayload = handler.HandleMessageForChannel(uint32(channel.channelId), payload)
+		} else {
+			responsePayload = channel.server.ctapServer.HandleMessage(payload)
+		}
 		stop <- 0
 		ctapHIDLogger.Printf("CTAPHID CBOR RESPONSE: %#v\n\n", responsePayload)
 		channel.server.sendResponse(header.ChannelID, ctapHIDCommandCBOR, responsePayload)

@@ -9,6 +9,7 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,13 @@ type CredentialChooser interface {
 type Options struct {
 	// How long the list of vault items is reused before asking Bitwarden again.
 	CacheTTL time.Duration
+	// TrustUnlockedVault uses live vault access as the authorization and
+	// verification policy. It does not independently verify a person; account
+	// selection can still be requested through SelectCredentialLocally.
+	TrustUnlockedVault bool
+	// Ask the approver's CredentialChooser to pick one matching passkey rather
+	// than returning multiple assertions for the browser's account picker.
+	SelectCredentialLocally bool
 }
 
 // Client is a virtual_fido.FIDOClient backed by a Bitwarden vault.
@@ -77,6 +85,8 @@ func (client *Client) fetchItems(force bool) ([]*Item, error) {
 	}
 	items, err := client.vault.ListItems()
 	if err != nil {
+		client.items = nil
+		client.itemsFetched = time.Time{}
 		return nil, fmt.Errorf("could not list vault items: %w", err)
 	}
 	client.items = items
@@ -162,41 +172,86 @@ func (client *Client) GetAssertionSource(relyingPartyID string, allowList []weba
 
 	client.pendingSource = nil
 	client.pendingCandidates = nil
-	passkeys, err := client.passkeys(relyingPartyID, false)
-	if err != nil {
-		bitwardenLogger.Printf("ERROR: %s\n", err)
-		return nil
-	}
-	var candidates []*passkey
-	for _, passkey := range passkeys {
-		if len(allowList) == 0 {
-			if passkey.credential.discoverable() {
-				candidates = append(candidates, passkey)
-			}
-			continue
-		}
-		for _, allowed := range allowList {
-			if bytes.Equal(allowed.ID, passkey.source.ID) {
-				candidates = append(candidates, passkey)
-				break
-			}
-		}
-	}
-	bitwardenDebugLogger.Printf("Found %d matching passkeys for %s\n", len(candidates), relyingPartyID)
+	candidates := client.assertionCandidates(relyingPartyID, allowList)
 	if len(candidates) == 0 {
 		return nil
 	}
-	// The CTAP server signs with the returned source after ApproveAccountLogin, which may
-	// replace its contents with the account the user picked.
+	// Terminal approval may replace this source with the user's chosen account.
 	source := *candidates[0].source
 	client.pendingSource = &source
 	client.pendingCandidates = candidates
 	return &source
 }
 
+// assertionCandidates requires client.lock and returns newest first.
+func (client *Client) assertionCandidates(relyingPartyID string, allowList []webauthn.PublicKeyCredentialDescriptor) []*passkey {
+	// In trusted-vault mode a previous successful lookup must not outlive a
+	// vault lock, even when the platform didn't ask for UV on this request.
+	passkeys, err := client.passkeys(relyingPartyID, client.options.TrustUnlockedVault)
+	if err != nil {
+		bitwardenLogger.Printf("ERROR: %s\n", err)
+		return nil
+	}
+	var candidates []*passkey
+	seen := make(map[string]bool)
+	for _, passkey := range passkeys {
+		id := string(passkey.source.ID)
+		if seen[id] {
+			continue
+		}
+		if len(allowList) == 0 {
+			if passkey.credential.discoverable() {
+				candidates = append(candidates, passkey)
+				seen[id] = true
+			}
+			continue
+		}
+		for _, allowed := range allowList {
+			if bytes.Equal(allowed.ID, passkey.source.ID) {
+				candidates = append(candidates, passkey)
+				seen[id] = true
+				break
+			}
+		}
+	}
+	bitwardenDebugLogger.Printf("Found %d matching passkeys for %s\n", len(candidates), relyingPartyID)
+	return candidates
+}
+
+// Browser selection is available only under the explicit prompt-free policy.
+// The terminal mode continues to return the one account selected in its prompt.
+func (client *Client) SupportsMultipleAssertions() bool {
+	return client.options.TrustUnlockedVault && !client.options.SelectCredentialLocally
+}
+
+func (client *Client) GetAssertionSources(relyingPartyID string) []*identities.CredentialSource {
+	if !client.SupportsMultipleAssertions() {
+		return nil
+	}
+	client.lock.Lock()
+	defer client.lock.Unlock()
+	candidates := client.assertionCandidates(relyingPartyID, nil)
+	sources := make([]*identities.CredentialSource, 0, len(candidates))
+	for _, candidate := range candidates {
+		source := *candidate.source
+		sources = append(sources, &source)
+	}
+	return sources
+}
+
 func (client *Client) ApproveAccountCreation(relyingParty string) bool {
 	bitwardenLogger.Printf("Refusing to create a passkey for %q: the Bitwarden backend is read-only\n", relyingParty)
 	return false
+}
+
+// ApproveAuthenticatorSelection handles the browser's touch-only selection
+// probe. Selection never authorizes a subsequent login or a vault mutation.
+func (client *Client) ApproveAuthenticatorSelection() bool {
+	if client.options.TrustUnlockedVault {
+		return client.VerifyUser(".dummy")
+	}
+	return client.approver != nil && client.approver.ApproveClientAction(
+		fido_client.ClientActionFIDOSelect, fido_client.ClientActionRequestParams{})
 }
 
 func (client *Client) ApproveAccountLogin(credentialSource *identities.CredentialSource) bool {
@@ -209,23 +264,95 @@ func (client *Client) ApproveAccountLogin(credentialSource *identities.Credentia
 	client.pendingCandidates = nil
 	client.lock.Unlock()
 
-	if chooser, ok := client.approver.(CredentialChooser); ok && len(candidates) > 1 {
+	if credentialSource == nil {
+		return false
+	}
+	chooseLocally := len(candidates) > 1 && (!client.options.TrustUnlockedVault || client.options.SelectCredentialLocally)
+	if chooser, ok := client.approver.(CredentialChooser); ok && chooseLocally {
 		userNames := make([]string, len(candidates))
 		for i, candidate := range candidates {
 			userNames[i] = candidate.source.User.Name
+			if client.options.SelectCredentialLocally {
+				userNames[i] = credentialChoiceLabel(candidate)
+			}
 		}
 		index, ok := chooser.ChooseCredential(credentialSource.RelyingParty.ID, userNames)
 		if !ok || index < 0 || index >= len(candidates) {
 			return false
 		}
-		*credentialSource = *candidates[index].source
+		selected := candidates[index].source
+		if client.options.TrustUnlockedVault {
+			// The vault may have locked or the selected passkey may have been
+			// removed while the terminal was waiting. Re-read it before signing.
+			client.lock.Lock()
+			fresh := client.assertionCandidates(credentialSource.RelyingParty.ID,
+				[]webauthn.PublicKeyCredentialDescriptor{selected.CTAPDescriptor()})
+			client.lock.Unlock()
+			if len(fresh) == 0 {
+				return false
+			}
+			selected = fresh[0].source
+		}
+		*credentialSource = *selected
 		return true
+	}
+	if chooseLocally && client.options.SelectCredentialLocally {
+		return false // a missing chooser must not silently choose the first key
+	}
+	if client.options.TrustUnlockedVault {
+		return len(candidates) > 0
+	}
+	if client.approver == nil {
+		return false
 	}
 	params := fido_client.ClientActionRequestParams{
 		RelyingParty: credentialSource.RelyingParty.ID,
 		UserName:     credentialSource.User.Name,
 	}
 	return client.approver.ApproveClientAction(fido_client.ClientActionFIDOGetAssertion, params)
+}
+
+func credentialChoiceLabel(candidate *passkey) string {
+	name := candidate.source.User.Name
+	if name == "" {
+		name = candidate.source.User.DisplayName
+	}
+	if name == "" {
+		name = "unnamed account"
+	}
+	parts := []string{fmt.Sprintf("%q", name)}
+	if candidate.item.Name != "" {
+		parts = append(parts, fmt.Sprintf("item %q", candidate.item.Name))
+	}
+	if candidate.credential.CreationDate != "" {
+		parts = append(parts, fmt.Sprintf("created %q", candidate.credential.CreationDate))
+	}
+	id := candidate.source.ID
+	if len(id) > 8 {
+		id = id[:8]
+	}
+	parts = append(parts, fmt.Sprintf("key %x", id))
+	return strings.Join(parts, " | ")
+}
+
+// SupportsUserVerification advertises the explicitly selected trust policy.
+// An unlocked vault is not an independent, per-operation identity check.
+func (client *Client) SupportsUserVerification() bool {
+	return client.options.TrustUnlockedVault
+}
+
+func (client *Client) VerifyUser(_ string) bool {
+	if !client.options.TrustUnlockedVault {
+		return false
+	}
+	client.lock.Lock()
+	defer client.lock.Unlock()
+	_, err := client.fetchItems(true)
+	if err != nil {
+		bitwardenLogger.Printf("Vault authorization failed: %s\n", err)
+		return false
+	}
+	return true
 }
 
 // Only used for new credentials, which are never created.

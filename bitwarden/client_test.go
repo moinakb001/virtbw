@@ -89,8 +89,11 @@ type assertionResponse struct {
 	AuthData  []byte `cbor:"2,keyasint"`
 	Signature []byte `cbor:"3,keyasint"`
 	User      *struct {
-		ID []byte `cbor:"id"`
+		ID          []byte `cbor:"id"`
+		Name        string `cbor:"name"`
+		DisplayName string `cbor:"displayName"`
 	} `cbor:"4,keyasint"`
+	NumberOfCredentials *int `cbor:"5,keyasint"`
 }
 
 func getAssertion(t *testing.T, server *ctap.CTAPServer, rpID string, clientDataHash []byte, allowList [][]byte) (byte, *assertionResponse) {
