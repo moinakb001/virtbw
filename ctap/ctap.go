@@ -110,7 +110,8 @@ func (server *CTAPServer) HandleMessage(data []byte) []byte {
 	case ctapCommandClientPIN:
 		return server.handleClientPIN(data[1:])
 	default:
-		panic(fmt.Sprintf("Invalid CTAP Command: %d", command))
+		ctapLogger.Printf("ERROR: Unsupported CTAP Command: %d\n\n", command)
+		return []byte{byte(ctap1ErrInvalidCommand)}
 	}
 }
 
@@ -314,11 +315,19 @@ type getAssertionArgs struct {
 	PINUVAuthProtocol uint32                                   `cbor:"7,keyasint,omitempty"`
 }
 
+// Returned for discoverable credentials so the platform learns which account signed in.
+// Name and display name are only included when the user was verified.
+type getAssertionUser struct {
+	ID          []byte `cbor:"id"`
+	Name        string `cbor:"name,omitempty"`
+	DisplayName string `cbor:"displayName,omitempty"`
+}
+
 type getAssertionResponse struct {
 	Credential        *webauthn.PublicKeyCredentialDescriptor `cbor:"1,keyasint,omitempty"`
 	AuthenticatorData []byte                                  `cbor:"2,keyasint"`
 	Signature         []byte                                  `cbor:"3,keyasint"`
-	//User                *PublicKeyCrendentialUserEntity `cbor:"4,keyasint,omitempty"`
+	User              *getAssertionUser                       `cbor:"4,keyasint,omitempty"`
 	//NumberOfCredentials int32 `cbor:"5,keyasint"`
 }
 
@@ -368,8 +377,14 @@ func (server *CTAPServer) handleGetAssertion(data []byte) []byte {
 		Credential:        &credentialDescriptor,
 		AuthenticatorData: authData,
 		Signature:         signature,
-		//User:                credentialSource.User,
 		//NumberOfCredentials: 1,
+	}
+	if len(args.AllowList) == 0 && credentialSource.User != nil && len(credentialSource.User.ID) > 0 {
+		response.User = &getAssertionUser{ID: credentialSource.User.ID}
+		if flags&authDataFlagUserVerified != 0 {
+			response.User.Name = credentialSource.User.Name
+			response.User.DisplayName = credentialSource.User.DisplayName
+		}
 	}
 
 	ctapLogger.Printf("GET ASSERTION RESPONSE: %#v\n\n", response)

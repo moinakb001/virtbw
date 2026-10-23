@@ -136,7 +136,11 @@ func (server *U2FServer) openKeyHandle(boxBytes []byte) (*webauthn.KeyHandle, er
 	if err != nil {
 		return nil, err
 	}
-	data := crypto.Open(server.client.SealingEncryptionKey(), box)
+	data, err := crypto.Decrypt(server.client.SealingEncryptionKey(), box.Data, box.IV)
+	if err != nil {
+		// Key handle was sealed by a different device
+		return nil, err
+	}
 	var keyHandle webauthn.KeyHandle
 	err = cbor.Unmarshal(data, &keyHandle)
 	if err != nil {
