@@ -6,7 +6,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/bulwarkid/virtual-fido/util"
+	"github.com/moinakb001/virtbw/util"
 )
 
 var usbipLogger = util.NewLogger("[USBIP] ", util.LogLevelTrace)

@@ -3,7 +3,7 @@ package util
 import (
 	"testing"
 
-	"github.com/bulwarkid/virtual-fido/test"
+	"github.com/moinakb001/virtbw/test"
 )
 
 func TestRequestBuffer(t *testing.T) {

@@ -3,8 +3,8 @@ package ctap_hid
 import (
 	"testing"
 
-	"github.com/bulwarkid/virtual-fido/test"
-	"github.com/bulwarkid/virtual-fido/util"
+	"github.com/moinakb001/virtbw/test"
+	"github.com/moinakb001/virtbw/util"
 )
 
 func makeHeader(channelId ctapHIDChannelID, command uint8, payloadLength uint16) []byte {

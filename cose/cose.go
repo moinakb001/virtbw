@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/bulwarkid/virtual-fido/crypto"
-	"github.com/bulwarkid/virtual-fido/util"
+	"github.com/moinakb001/virtbw/crypto"
+	"github.com/moinakb001/virtbw/util"
 	"github.com/fxamacker/cbor/v2"
 )
 

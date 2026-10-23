@@ -5,9 +5,9 @@ import (
 	"crypto/x509"
 	"fmt"
 
-	"github.com/bulwarkid/virtual-fido/cose"
-	"github.com/bulwarkid/virtual-fido/crypto"
-	"github.com/bulwarkid/virtual-fido/webauthn"
+	"github.com/moinakb001/virtbw/cose"
+	"github.com/moinakb001/virtbw/crypto"
+	"github.com/moinakb001/virtbw/webauthn"
 )
 
 type CredentialSource struct {

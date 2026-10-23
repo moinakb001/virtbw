@@ -1,4 +1,4 @@
-module github.com/bulwarkid/virtual-fido
+module github.com/moinakb001/virtbw
 
 go 1.19
 

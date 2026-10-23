@@ -3,7 +3,7 @@ package ctap_hid
 import (
 	"bytes"
 
-	"github.com/bulwarkid/virtual-fido/util"
+	"github.com/moinakb001/virtbw/util"
 )
 
 type transactionResult struct {

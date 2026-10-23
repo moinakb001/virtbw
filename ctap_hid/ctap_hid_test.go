@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/bulwarkid/virtual-fido/crypto"
-	"github.com/bulwarkid/virtual-fido/util"
+	"github.com/moinakb001/virtbw/crypto"
+	"github.com/moinakb001/virtbw/util"
 )
 
 type dummyHandler struct{}

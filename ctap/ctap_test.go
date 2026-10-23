@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/bulwarkid/virtual-fido/cose"
-	"github.com/bulwarkid/virtual-fido/crypto"
-	"github.com/bulwarkid/virtual-fido/identities"
-	"github.com/bulwarkid/virtual-fido/test"
-	"github.com/bulwarkid/virtual-fido/util"
-	"github.com/bulwarkid/virtual-fido/webauthn"
+	"github.com/moinakb001/virtbw/cose"
+	"github.com/moinakb001/virtbw/crypto"
+	"github.com/moinakb001/virtbw/identities"
+	"github.com/moinakb001/virtbw/test"
+	"github.com/moinakb001/virtbw/util"
+	"github.com/moinakb001/virtbw/webauthn"
 	"github.com/fxamacker/cbor/v2"
 )
 

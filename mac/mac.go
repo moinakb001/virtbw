@@ -3,8 +3,8 @@ package mac
 import (
 	"unsafe"
 
-	"github.com/bulwarkid/virtual-fido/ctap_hid"
-	"github.com/bulwarkid/virtual-fido/util"
+	"github.com/moinakb001/virtbw/ctap_hid"
+	"github.com/moinakb001/virtbw/util"
 )
 
 // #cgo LDFLAGS: -L${SRCDIR}/output -lUSBDriverLib

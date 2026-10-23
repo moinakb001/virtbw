@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/bulwarkid/virtual-fido/test"
-	"github.com/bulwarkid/virtual-fido/util"
+	"github.com/moinakb001/virtbw/test"
+	"github.com/moinakb001/virtbw/util"
 )
 
 type dummyUSBDeviceDelegate struct {

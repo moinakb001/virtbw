@@ -3,9 +3,9 @@ package virtual_fido
 import (
 	"io"
 
-	"github.com/bulwarkid/virtual-fido/ctap"
-	"github.com/bulwarkid/virtual-fido/u2f"
-	"github.com/bulwarkid/virtual-fido/util"
+	"github.com/moinakb001/virtbw/ctap"
+	"github.com/moinakb001/virtbw/u2f"
+	"github.com/moinakb001/virtbw/util"
 )
 
 type FIDOClient interface {

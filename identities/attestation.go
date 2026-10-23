@@ -9,7 +9,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/bulwarkid/virtual-fido/cose"
+	"github.com/moinakb001/virtbw/cose"
 )
 
 // We need two functions here because Go's type system isn't enough to support this

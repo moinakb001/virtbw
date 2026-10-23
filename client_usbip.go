@@ -3,11 +3,11 @@
 package virtual_fido
 
 import (
-	"github.com/bulwarkid/virtual-fido/ctap"
-	"github.com/bulwarkid/virtual-fido/ctap_hid"
-	"github.com/bulwarkid/virtual-fido/u2f"
-	"github.com/bulwarkid/virtual-fido/usb"
-	"github.com/bulwarkid/virtual-fido/usbip"
+	"github.com/moinakb001/virtbw/ctap"
+	"github.com/moinakb001/virtbw/ctap_hid"
+	"github.com/moinakb001/virtbw/u2f"
+	"github.com/moinakb001/virtbw/usb"
+	"github.com/moinakb001/virtbw/usbip"
 )
 
 func startClient(client FIDOClient) {

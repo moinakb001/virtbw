@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"unsafe"
 
-	"github.com/bulwarkid/virtual-fido/usbip"
-	"github.com/bulwarkid/virtual-fido/util"
+	"github.com/moinakb001/virtbw/usbip"
+	"github.com/moinakb001/virtbw/util"
 )
 
 var usbLogger = util.NewLogger("[USB] ", util.LogLevelTrace)

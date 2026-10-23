@@ -3,10 +3,10 @@
 package virtual_fido
 
 import (
-	"github.com/bulwarkid/virtual-fido/ctap"
-	"github.com/bulwarkid/virtual-fido/ctap_hid"
-	"github.com/bulwarkid/virtual-fido/mac"
-	"github.com/bulwarkid/virtual-fido/u2f"
+	"github.com/moinakb001/virtbw/ctap"
+	"github.com/moinakb001/virtbw/ctap_hid"
+	"github.com/moinakb001/virtbw/mac"
+	"github.com/moinakb001/virtbw/u2f"
 )
 
 /*

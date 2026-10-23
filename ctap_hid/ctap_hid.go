@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"sync"
 
-	"github.com/bulwarkid/virtual-fido/util"
+	"github.com/moinakb001/virtbw/util"
 )
 
 var ctapHIDLogger = util.NewLogger("[CTAPHID] ", util.LogLevelDebug)

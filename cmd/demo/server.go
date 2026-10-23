@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	virtual_fido "github.com/bulwarkid/virtual-fido"
-	"github.com/bulwarkid/virtual-fido/fido_client"
+	virtual_fido "github.com/moinakb001/virtbw"
+	"github.com/moinakb001/virtbw/fido_client"
 )
 
 func prompt(prompt string) bool {

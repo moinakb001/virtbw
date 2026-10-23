@@ -15,10 +15,10 @@ import (
 
 	"golang.org/x/crypto/cryptobyte"
 
-	"github.com/bulwarkid/virtual-fido/cose"
-	"github.com/bulwarkid/virtual-fido/crypto"
-	"github.com/bulwarkid/virtual-fido/util"
-	"github.com/bulwarkid/virtual-fido/webauthn"
+	"github.com/moinakb001/virtbw/cose"
+	"github.com/moinakb001/virtbw/crypto"
+	"github.com/moinakb001/virtbw/util"
+	"github.com/moinakb001/virtbw/webauthn"
 )
 
 func checkErr(err error, t *testing.T) {

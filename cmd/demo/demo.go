@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	virtual_fido "github.com/bulwarkid/virtual-fido"
-	"github.com/bulwarkid/virtual-fido/fido_client"
-	"github.com/bulwarkid/virtual-fido/identities"
-	"github.com/bulwarkid/virtual-fido/util"
+	virtual_fido "github.com/moinakb001/virtbw"
+	"github.com/moinakb001/virtbw/fido_client"
+	"github.com/moinakb001/virtbw/identities"
+	"github.com/moinakb001/virtbw/util"
 	"github.com/spf13/cobra"
 )
 

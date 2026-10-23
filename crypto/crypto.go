@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"math/big"
 
-	util "github.com/bulwarkid/virtual-fido/util"
+	util "github.com/moinakb001/virtbw/util"
 )
 
 const RSA_NUMBER_OF_BITS = 4096

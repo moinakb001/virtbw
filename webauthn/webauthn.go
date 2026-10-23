@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/bulwarkid/virtual-fido/cose"
+	"github.com/moinakb001/virtbw/cose"
 )
 
 type PublicKeyCredentialRPEntity struct {

@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/bulwarkid/virtual-fido/crypto"
-	"github.com/bulwarkid/virtual-fido/util"
-	"github.com/bulwarkid/virtual-fido/webauthn"
+	"github.com/moinakb001/virtbw/crypto"
+	"github.com/moinakb001/virtbw/util"
+	"github.com/moinakb001/virtbw/webauthn"
 
 	"golang.org/x/crypto/scrypt"
 )
