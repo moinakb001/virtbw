@@ -37,8 +37,39 @@ Install the [Bitwarden CLI](https://bitwarden.com/help/cli/) and unlock your vau
     go run ./cmd/virtbw --backend serve --serve-url http://localhost:8087 start
     ```
 
-On Linux, load `vhci-hcd` first and run `start` with `sudo` (keep `BW_SESSION` with `sudo -E`),
-as described in the demo instructions below.
+On Linux and Windows the device is attached over USB/IP. On Linux, load `vhci-hcd` first and run
+`start` with `sudo` (keep `BW_SESSION` with `sudo -E`), as described in the demo instructions
+below.
+
+### macOS
+
+On macOS, `virtbw` creates a virtual HID security key with IOKit's `IOHIDUserDevice` (macOS
+10.15+), so browsers and other apps that talk to USB security keys can see it. No driver or
+USB/IP is involved.
+
+macOS only lets a process create that device if its code signature carries the
+`com.apple.developer.hid.virtual.device` entitlement, which needs Apple's approval:
+
+1. In an Apple Developer Program account, request the "HID Virtual Device" capability
+   (Certificates, Identifiers & Profiles → Identifiers → your App ID → Capability Requests tab).
+   Approval can take weeks.
+2. Once it is granted, enable it on an App ID (e.g. `com.yourname.virtbw`) and create a macOS
+   development provisioning profile for that App ID and your Mac.
+3. Build and sign the app bundle (needs Xcode command line tools):
+
+    ```sh
+    PROFILE=~/Downloads/virtbw.provisionprofile \
+    IDENTITY="Apple Development: Your Name (ABCDE12345)" \
+        scripts/macos-bundle.sh
+    export BW_SESSION="$(bw unlock --raw)"
+    build/virtbw.app/Contents/MacOS/virtbw start
+    ```
+
+Without a profile, the script signs ad hoc. macOS only runs that build if AMFI enforcement is
+turned off, which requires disabling System Integrity Protection; that setup is untested.
+
+The old DriverKit transport is still available with `go build -tags driverkit`, but it needs a
+system extension installed (see `mac/USBDriver/README.md`).
 
 Useful flags: `--cache-ttl` (how long the item list is reused, default 30s), `--sync=false`
 (skip `bw sync` on start), `--verbose`. When several passkeys match a site, `virtbw` asks which

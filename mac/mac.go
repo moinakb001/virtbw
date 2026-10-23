@@ -1,3 +1,5 @@
+//go:build darwin && driverkit
+
 package mac
 
 import (
