@@ -1,3 +1,53 @@
+# virtbw: Virtual FIDO with Bitwarden passkeys
+
+This is a fork of [Virtual FIDO](https://github.com/bulwarkid/virtual-fido) that adds a read-only
+[Bitwarden](https://bitwarden.com) backend: the virtual USB security key logs in with the
+passkeys already stored in your Bitwarden vault, so any browser or app that supports hardware
+security keys can use them.
+
+The backend only looks passkeys up. It never writes to the vault and stores nothing on disk:
+
+-   Registering a new passkey (or U2F key) through the device is refused. Save passkeys with the
+    Bitwarden apps or browser extension instead.
+-   Signature counters are not updated. Passkeys created by Bitwarden use a counter of 0, which
+    relying parties treat as "no counter", so this only matters for imported passkeys that use a
+    non-zero counter.
+-   PIN / user verification is not supported, because a PIN would have to be stored. Sites that
+    require user verification will not accept the device.
+-   Every login is approved in the terminal. Bitwarden's master password re-prompt setting is
+    not enforced beyond that approval.
+
+## Bitwarden usage
+
+Install the [Bitwarden CLI](https://bitwarden.com/help/cli/) and unlock your vault. Then either:
+
+-   **`cli` backend (default):** export the session key and let `virtbw` run `bw` for each lookup.
+
+    ```sh
+    export BW_SESSION="$(bw unlock --raw)"
+    go run ./cmd/virtbw list    # show the passkeys that will be offered
+    go run ./cmd/virtbw start   # attach the virtual security key
+    ```
+
+-   **`serve` backend:** run `bw serve` (the Vault Management API) and point `virtbw` at it.
+    Lookups are faster because no `bw` process is started per request.
+
+    ```sh
+    bw serve --port 8087 &
+    go run ./cmd/virtbw --backend serve --serve-url http://localhost:8087 start
+    ```
+
+On Linux, load `vhci-hcd` first and run `start` with `sudo` (keep `BW_SESSION` with `sudo -E`),
+as described in the demo instructions below.
+
+Useful flags: `--cache-ttl` (how long the item list is reused, default 30s), `--sync=false`
+(skip `bw sync` on start), `--verbose`. When several passkeys match a site, `virtbw` asks which
+account to use.
+
+The backend lives in the [`bitwarden`](./bitwarden) package. `bitwarden.NewClient` takes any
+`bitwarden.Vault` (the `bw` CLI, `bw serve`, or your own) and returns a client for
+`virtual_fido.Start`.
+
 # Virtual FIDO
 
 > Also check out [Bulwark Passkey](https://bulwark.id), a passkey manager based on VirtualFIDO that is currently in beta!
